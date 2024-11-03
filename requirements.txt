@@ -5,9 +5,8 @@ scipy
 plotly
 matplotlib
 seaborn
-matplotlib.pyplot 
-mpl_toolkits.mplot3d 
+mpl_toolkits
 yfinance 
 datetime 
-plotly.graph_objects
-plotly.subplots
+
+
