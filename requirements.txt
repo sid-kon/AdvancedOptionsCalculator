@@ -5,7 +5,6 @@ scipy
 plotly
 matplotlib
 seaborn
-mpl_toolkits
 yfinance 
 datetime 
 
