@@ -1,0 +1,16 @@
+streamlit
+pandas
+numpy
+scipy
+plotly
+matplotlib
+seaborn
+scipy.stats 
+scipy.optimize 
+streamlit 
+matplotlib.pyplot 
+mpl_toolkits.mplot3d 
+finance 
+datetime 
+plotly.graph_objects 
+plotly.subplots 
