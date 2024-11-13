@@ -382,11 +382,18 @@ def get_options_chain(symbol, expiry_date):
         st.error(f"Error fetching options chain: {e}")
         return None
 def plot_heatmap(bs, spot_range, vol_range, strike, purchase_price_call, purchase_price_put):
-    call_pl = np.zeros((len(vol_range), len(spot_range)))
-    put_pl = np.zeros((len(vol_range), len(spot_range)))
+    """
+    Create P&L heatmaps for call and put options using user-defined ranges
+    """
+    # Create meshgrid for spot prices and volatilities
+    spot_prices = np.linspace(spot_range[0], spot_range[1], 10)  # 10 points for better visualization
+    volatilities = np.linspace(vol_range[0], vol_range[1], 10)  # 10 points for better visualization
+    
+    call_pl = np.zeros((len(volatilities), len(spot_prices)))
+    put_pl = np.zeros((len(volatilities), len(spot_prices)))
 
-    for i, vol in enumerate(vol_range):
-        for j, spot in enumerate(spot_range):
+    for i, vol in enumerate(volatilities):
+        for j, spot in enumerate(spot_prices):
             bs_temp = BlackScholes(
                 time_to_maturity=bs.time_to_maturity,
                 strike=strike,
@@ -399,6 +406,24 @@ def plot_heatmap(bs, spot_range, vol_range, strike, purchase_price_call, purchas
             put_pl[i, j] = bs_temp.calculate_pl(purchase_price_put, 'put')
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 7))
+
+    # Create heatmaps with updated ranges
+    sns.heatmap(call_pl, ax=ax1, cmap="RdYlGn", annot=True, fmt=".2f",
+                xticklabels=[f"{x:.1f}" for x in spot_prices],
+                yticklabels=[f"{x:.2f}" for x in volatilities])
+    ax1.set_title("Call Option P&L Heatmap")
+    ax1.set_xlabel("Spot Price")
+    ax1.set_ylabel("Volatility")
+
+    sns.heatmap(put_pl, ax=ax2, cmap="RdYlGn", annot=True, fmt=".2f",
+                xticklabels=[f"{x:.1f}" for x in spot_prices],
+                yticklabels=[f"{x:.2f}" for x in volatilities])
+    ax2.set_title("Put Option P&L Heatmap")
+    ax2.set_xlabel("Spot Price")
+    ax2.set_ylabel("Volatility")
+
+    plt.tight_layout()
+    return fig
 
     sns.heatmap(call_pl, ax=ax1, cmap="RdYlGn", annot=True, fmt=".2f",
                 xticklabels=[f"{x:.1f}" for x in spot_range],
@@ -486,7 +511,7 @@ st.sidebar.title("Advanced Options Calculator")
 # Sidebar navigation
 page = st.sidebar.selectbox(
     "Select Tool",
-    ["Options Calculator", "Market Data", "Greeks Analysis", "Implied Volatility"]
+    ["Options Calculator", "Implied Volatility", "Greeks Analysis"]
 )
 with st.sidebar:
         st.write("Created by:")
@@ -507,14 +532,13 @@ if page == "Options Calculator":
         volatility = st.number_input("Volatility (%)", value=20.0, min_value=0.01) / 100
         
     with col3:
-        interest_rate = st.number_input("Risk-free Rate (%)", value=15.0, min_value=0.01) / 100
+        interest_rate = st.number_input("Risk-free Rate (%)", value=5.0, min_value=0.01) / 100
 
     try:
         bs = BlackScholes(time_to_maturity, strike, current_price, volatility, interest_rate)
         call_price, put_price = bs.calculate_prices()
         greeks = bs.calculate_greeks()
         
-        # [Rest of Options Calculator section remains the same]
         # Display results
         st.subheader("Option Prices")
         col1, col2 = st.columns(2)
@@ -525,8 +549,6 @@ if page == "Options Calculator":
         with col2:
             st.metric("Put Option Price", f"${put_price:.2f}")
             put_purchase = st.number_input("Put Purchase Price", value=10.0, min_value=0.0, step=0.01)
-        
-        
         
         col1, col2 = st.columns(2)
         
@@ -545,25 +567,87 @@ if page == "Options Calculator":
         tab1, tab2 = st.tabs(["P&L Heatmaps", "Payoff Diagrams"])
     
         with tab1:
-            # Create and display heatmap
-            
             st.subheader("P&L Heatmap Analysis")
-            spot_range = np.linspace(current_price * 0.8, current_price * 1.2, 5)
-            vol_range = np.linspace(volatility * 0.8, volatility * 1.2, 5)
             
-            fig = plot_heatmap(bs, spot_range, vol_range, strike, call_purchase, put_purchase)
-            st.pyplot(fig)
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                # Add sliders for volatility range
+                vol_min = st.slider('Min Volatility for Heatmap (%)', 
+                                  min_value=1, 
+                                  max_value=100, 
+                                  value=int(volatility*50),
+                                  step=1) / 100.0
+                
+                vol_max = st.slider('Max Volatility for Heatmap (%)', 
+                                  min_value=1, 
+                                  max_value=100, 
+                                  value=int(volatility*150),
+                                  step=1) / 100.0
 
-            st.markdown("---")
-        vol_min = st.slider('Min Volatility for Heatmap', min_value=0.01, max_value=1.0, value=volatility*0.5, step=0.01)
-        vol_max = st.slider('Max Volatility for Heatmap', min_value=0.01, max_value=1.0, value=volatility*1.5, step=0.01)
+                # Add inputs for spot price range
+                spot_min = st.number_input('Min Spot Price',
+                                         min_value=0.01,
+                                         max_value=current_price,
+                                         value=current_price*0.8,
+                                         step=0.01)
+                
+                spot_max = st.number_input('Max Spot Price',
+                                         min_value=spot_min,
+                                         value=current_price*1.2,
+                                         step=0.01)
+            
+            with col2:
+                # Add refresh button
+                refresh_heatmap = st.button('Refresh Heatmap', key='refresh_heatmap')
+            
+            # Store the parameters in session state
+            if 'heatmap_params' not in st.session_state:
+                st.session_state.heatmap_params = {
+                    'spot_min': spot_min,
+                    'spot_max': spot_max,
+                    'vol_min': vol_min,
+                    'vol_max': vol_max
+                }
+            
+            # Update heatmap only when refresh button is clicked
+            if refresh_heatmap:
+                st.session_state.heatmap_params = {
+                    'spot_min': spot_min,
+                    'spot_max': spot_max,
+                    'vol_min': vol_min,
+                    'vol_max': vol_max
+                }
+            
+            # Display validation errors if any
+            if spot_max <= spot_min:
+                st.error("Maximum spot price must be greater than minimum spot price")
+            elif vol_max <= vol_min:
+                st.error("Maximum volatility must be greater than minimum volatility")
+            else:
+                try:
+                    # Create heatmap with stored parameters
+                    fig = plot_heatmap(bs, 
+                                     spot_range=(st.session_state.heatmap_params['spot_min'],
+                                               st.session_state.heatmap_params['spot_max']),
+                                     vol_range=(st.session_state.heatmap_params['vol_min'],
+                                              st.session_state.heatmap_params['vol_max']),
+                                     strike=strike,
+                                     purchase_price_call=call_purchase,
+                                     purchase_price_put=put_purchase)
+                    st.pyplot(fig)
+                    
+                    st.markdown("""
+                    **Understanding the Heatmap:**
+                    - Green indicates profitable positions
+                    - Red indicates losing positions
+                    - Values show the theoretical P&L for each combination of spot price and volatility
+                    
+                    """)
+                    
+                except Exception as e:
+                    st.error(f"Error generating heatmap: {str(e)}")
 
-        spot_min = st.number_input('Min Spot Price', min_value=0.01, value=current_price*0.8, step=0.01)
-        spot_max = st.number_input('Max Spot Price', min_value=0.01, value=current_price*1.2, step=0.01)
-        
-        spot_range = np.linspace(spot_min, spot_max, 10)
-        vol_range = np.linspace(vol_min, vol_max, 10)
-    
         with tab2:
             # Plot payoff diagrams
             spot_range = np.linspace(current_price * 0.5, current_price * 1.5, 100)
@@ -576,6 +660,7 @@ if page == "Options Calculator":
             with col2:
                 put_payoff = plot_option_payoff(spot_range, strike, put_price, 'put')
                 st.plotly_chart(put_payoff, use_container_width=True)
+
         # Display Greeks
         st.subheader("Greeks")
         col1, col2, col3, col4 = st.columns(4)
@@ -598,20 +683,38 @@ if page == "Options Calculator":
 
     except Exception as e:
         st.error(f"Error in calculation: {e}")
-
-elif page == "Market Data":
-    st.header("Market Data")
-    symbol = st.text_input("Enter Stock Symbol (e.g., AAPL)", value="AAPL")
+        
+        
+elif page == "Implied Volatility":
+    st.header("Market Data & Volatility Analysis")
+    
+    # Create two columns for input
+    input_col1, input_col2 = st.columns(2)
+    
+    with input_col1:
+        symbol = st.text_input("Enter Stock Symbol (e.g., AAPL)", value="AAPL")
+    
+    with input_col2:
+        risk_free_rate = st.number_input(
+            "Risk-Free Rate (%)", 
+            min_value=0.0,
+            max_value=100.0,
+            value=5.0,
+            step=0.1,
+            help="Enter the risk-free rate as a percentage (e.g., 5.0 for 5%)"
+        ) / 100
+    
     if symbol:
         try:
             market_data = get_market_data(symbol)
             
             if market_data:
+                # Market Overview Section
+                st.subheader("Market Overview")
                 col1, col2 = st.columns(2)
                 with col1:
                     st.metric("Current Stock Price", f"${market_data['current_price']:.2f}")
-                with col2:
-                    st.metric("Risk-free Rate", f"{market_data['risk_free_rate']:.2%}")
+                
                 
                 # Display options chain
                 maturity_date = st.selectbox("Select Maturity Date", market_data['options_dates'])
@@ -626,200 +729,182 @@ elif page == "Market Data":
                         
                         # Add implied volatility calculation
                         current_price = market_data['current_price']
-                        risk_free_rate = market_data['risk_free_rate']
-                        
-                        def calculate_iv(row):
-                            try:
-                                if row['lastPrice'] <= 0 or pd.isna(row['lastPrice']):
-                                    return None
-                                    
-                                bs = BlackScholes(
-                                    time_to_maturity=max(days_to_expiry/365, 0.01),
-                                    strike=row['strike'],
-                                    current_price=current_price,
-                                    volatility=0.3,
-                                    interest_rate=risk_free_rate
-                                )
-                                
-                                option_type = 'call' if row['Option Type'] == 'Call' else 'put'
-                                market_price = row['lastPrice']
-                                
-                                # Define the objective function
-                                def objective_function(vol):
-                                    bs.volatility = vol
-                                    call_price, put_price = bs.calculate_prices()
-                                    model_price = call_price if option_type == 'call' else put_price
-                                    return model_price - market_price
-                                
-                                # Try different initial bounds until a solution is found
-                                bounds_list = [
-                                    (0.01, 5.0),
-                                    (0.01, 10.0),
-                                    (0.0001, 20.0)
-                                ]
-                                
-                                for bounds in bounds_list:
-                                    try:
-                                        f_lower = objective_function(bounds[0])
-                                        f_upper = objective_function(bounds[1])
-                                        
-                                        if f_lower * f_upper > 0:
-                                            continue
-                                            
-                                        implied_vol = brentq(
-                                            objective_function,
-                                            bounds[0],
-                                            bounds[1],
-                                            xtol=1e-5,
-                                            maxiter=100
-                                        )
-                                        
-                                        if 0.0001 <= implied_vol <= 20.0:
-                                            return implied_vol
-                                    except:
-                                        continue
-                                
-                                return None
-                            except Exception as e:
-                                return None
                         
                         # Calculate IV with progress bar
+                        
                         progress_bar = st.progress(0)
                         
                         total_rows = len(options_chain)
                         options_chain['IV'] = None
                         
                         for idx, row in options_chain.iterrows():
-                            iv = calculate_iv(row)
-                            options_chain.at[idx, 'IV'] = iv
-                            progress_bar.progress((idx + 1) / total_rows)
+                            try:
+                                if row['lastPrice'] <= 0 or pd.isna(row['lastPrice']) or row['volume'] == 0:
+                                    options_chain.at[idx, 'IV'] = None
+                                else:
+                                    iv = calculate_iv(
+                                        row=row,
+                                        current_price=current_price,
+                                        risk_free_rate=risk_free_rate,
+                                        days_to_expiry=days_to_expiry
+                                    )
+                                    options_chain.at[idx, 'IV'] = iv
+                            except Exception as calc_error:
+                                options_chain.at[idx, 'IV'] = None
+                            finally:
+                                progress_bar.progress((idx + 1) / total_rows)
                         
                         progress_bar.empty()
                         
-                        # Create tabs for different views
-                        tab1, tab2, tab3 = st.tabs([
+                        
+                        # Create tabs for different analyses
+                        tab1, tab2, tab3, tab4 = st.tabs([
                             "Options Chain",
+                            "Volatility Surface",
                             "Volatility Smile",
                             "Volume Analysis"
-                            
                         ])
                         
-                        # [Tab content implementation remains the same]
                         with tab1:
                             st.subheader("Options Chain")
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            min_strike = float(options_chain['strike'].min())
-                            max_strike = float(options_chain['strike'].max())
-                            strike_range = st.slider(
-                                "Strike Price Range",
-                                min_value=min_strike,
-                                max_value=max_strike,
-                                value=(min_strike, max_strike)
-                            )
-                        
-                        with col2:
-                            option_type = st.multiselect(
-                                "Option Type",
-                                ['Call', 'Put'],
-                                default=['Call', 'Put']
-                            )
-                        
-                        filtered_chain = options_chain[
-                            (options_chain['strike'].between(strike_range[0], strike_range[1])) &
-                            (options_chain['Option Type'].isin(option_type))
-                        ]
-                        
-                        # Custom formatters that handle None/NaN values
-                        def format_price(x):
-                            return f"${x:.2f}" if pd.notnull(x) and x != 0 else "-"
                             
-                        def format_iv(x):
-                            return f"{x:.2%}" if pd.notnull(x) else "-"
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                min_strike = float(options_chain['strike'].min())
+                                max_strike = float(options_chain['strike'].max())
+                                strike_range = st.slider(
+                                    "Strike Price Range",
+                                    min_value=min_strike,
+                                    max_value=max_strike,
+                                    value=(min_strike, max_strike)
+                                )
                             
-                        def format_number(x):
-                            return f"{int(x):,}" if pd.notnull(x) and x != 0 else "-"
-                        
-                        # Create formatted display DataFrame
-                        display_df = filtered_chain[[
-                            'Option Type', 'strike', 'lastPrice', 'bid', 'ask',
-                            'volume', 'openInterest', 'IV'
-                        ]].copy()
-                        
-                        # Apply formatting
-                        display_df['strike'] = display_df['strike'].apply(format_price)
-                        display_df['lastPrice'] = display_df['lastPrice'].apply(format_price)
-                        display_df['bid'] = display_df['bid'].apply(format_price)
-                        display_df['ask'] = display_df['ask'].apply(format_price)
-                        display_df['volume'] = display_df['volume'].apply(format_number)
-                        display_df['openInterest'] = display_df['openInterest'].apply(format_number)
-                        display_df['IV'] = display_df['IV'].apply(format_iv)
-                        
-                        # Display formatted DataFrame
-                        st.dataframe(display_df)
-                    
-                    with tab2:
-                        st.subheader("Volatility Smile")
-                        
-                        fig = go.Figure()
-                        
-                        for opt_type in ['Call', 'Put']:
-                            data = filtered_chain[
-                                (filtered_chain['Option Type'] == opt_type) &
-                                (filtered_chain['IV'].notna())
+                            with col2:
+                                option_type = st.multiselect(
+                                    "Option Type",
+                                    ['Call', 'Put'],
+                                    default=['Call', 'Put']
+                                )
+                            
+                            filtered_chain = options_chain[
+                                (options_chain['strike'].between(strike_range[0], strike_range[1])) &
+                                (options_chain['Option Type'].isin(option_type))
                             ]
-                            fig.add_trace(go.Scatter(
-                                x=data['strike'],
-                                y=data['IV'],
-                                name=f"{opt_type} IV",
-                                mode='markers+lines'
-                            ))
-                        
-                        fig.update_layout(
-                            title="Implied Volatility Smile",
-                            xaxis_title="Strike Price",
-                            yaxis_title="Implied Volatility",
-                            hovermode='x unified'
-                        )
-                        
-                        st.plotly_chart(fig, use_container_width=True)
-                    
-                    with tab3:
-                        st.subheader("Volume Analysis")
-                        
-                        fig = go.Figure()
-                        
-                        for opt_type in ['Call', 'Put']:
-                            data = filtered_chain[filtered_chain['Option Type'] == opt_type]
                             
-                            fig.add_trace(go.Bar(
-                                name=f"{opt_type} Volume",
-                                x=data['strike'],
-                                y=data['volume'],
-                                marker_color='blue' if opt_type == 'Call' else 'red',
-                                opacity=0.6
-                            ))
+                            # Display formatted DataFrame
+                            display_df = filtered_chain[[
+                                'Option Type', 'strike', 'lastPrice', 'bid', 'ask',
+                                'volume', 'openInterest', 'IV'
+                            ]].copy()
                             
-                            fig.add_trace(go.Scatter(
-                                name=f"{opt_type} Open Interest",
-                                x=data['strike'],
-                                y=data['openInterest'],
-                                line=dict(color='green' if opt_type == 'Call' else 'orange')
-                            ))
+                            # Format the display DataFrame
+                            def format_price(x):
+                                return f"${x:.2f}" if pd.notnull(x) and x != 0 else "-"
+                                
+                            def format_iv(x):
+                                return f"{x:.2%}" if pd.notnull(x) else "-"
+                                
+                            def format_number(x):
+                                return f"{int(x):,}" if pd.notnull(x) and x != 0 else "-"
+                            
+                            display_df['strike'] = display_df['strike'].apply(format_price)
+                            display_df['lastPrice'] = display_df['lastPrice'].apply(format_price)
+                            display_df['bid'] = display_df['bid'].apply(format_price)
+                            display_df['ask'] = display_df['ask'].apply(format_price)
+                            display_df['volume'] = display_df['volume'].apply(format_number)
+                            display_df['openInterest'] = display_df['openInterest'].apply(format_number)
+                            display_df['IV'] = display_df['IV'].apply(format_iv)
+                            
+                            st.dataframe(display_df)
                         
-                        fig.update_layout(
-                            title="Volume and Open Interest Analysis",
-                            xaxis_title="Strike Price",
-                            yaxis_title="Contracts",
-                            barmode='group',
-                            hovermode='x unified'
-                        )
+                        with tab2:
+                            st.subheader("Implied Volatility Surface")
+                            with st.spinner(""):
+                                iv_surface = plot_iv_surface(symbol)
+                                if iv_surface is not None:
+                                    st.plotly_chart(iv_surface, use_container_width=True)
+                                    
+                                    st.markdown("""
+                                    **Understanding the IV Surface:**
+                                    - X-axis: Time to Maturity shows how IV varies across different expiration dates
+                                    - Y-axis: Moneyness (Strike/Spot) indicates if options are ITM, ATM, or OTM
+                                    - Z-axis: Implied Volatility level
+                                    - Color intensity represents the IV level
+                                    """)
                         
-                        st.plotly_chart(fig, use_container_width=True)
+                        with tab3:
+                            st.subheader("Volatility Smile")
+                            fig = go.Figure()
+                            
+                            for opt_type in ['Call', 'Put']:
+                                data = filtered_chain[
+                                    (filtered_chain['Option Type'] == opt_type) &
+                                    (filtered_chain['IV'].notna())
+                                ]
+                                fig.add_trace(go.Scatter(
+                                    x=data['strike'],
+                                    y=data['IV'],
+                                    name=f"{opt_type} IV",
+                                    mode='markers+lines'
+                                ))
+                            
+                            fig.update_layout(
+                                title="Implied Volatility Smile",
+                                xaxis_title="Strike Price",
+                                yaxis_title="Implied Volatility",
+                                hovermode='x unified'
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            st.markdown("""
+                            **Understanding the Volatility Smile:**
+                            - Shows how implied volatility varies across different strike prices
+                            - Typically forms a "smile" or "smirk" pattern
+                            - ATM options usually have lower IV than OTM options
+                            """)
                         
-        except Exception as e:
-            st.error(f"Calculation Error: {e}")
+                        with tab4:
+                            st.subheader("Volume Analysis")
+                            fig = go.Figure()
+                            
+                            for opt_type in ['Call', 'Put']:
+                                data = filtered_chain[filtered_chain['Option Type'] == opt_type]
+                                
+                                fig.add_trace(go.Bar(
+                                    name=f"{opt_type} Volume",
+                                    x=data['strike'],
+                                    y=data['volume'],
+                                    marker_color='blue' if opt_type == 'Call' else 'red',
+                                    opacity=0.6
+                                ))
+                                
+                                fig.add_trace(go.Scatter(
+                                    name=f"{opt_type} Open Interest",
+                                    x=data['strike'],
+                                    y=data['openInterest'],
+                                    line=dict(color='green' if opt_type == 'Call' else 'orange')
+                                ))
+                            
+                            fig.update_layout(
+                                title="Volume and Open Interest Analysis",
+                                xaxis_title="Strike Price",
+                                yaxis_title="Contracts",
+                                barmode='group',
+                                hovermode='x unified'
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            st.markdown("""
+                            **Understanding Volume Analysis:**
+                            - Bars show trading volume for each strike price
+                            - Lines show open interest (outstanding contracts)
+                            - Higher values indicate more liquid options
+                            """)
+                        
+        except Exception as error:
+            st.error(f"Error in calculation: {str(error)}")
 
 elif page == "Greeks Analysis":
     st.header("Greeks Analysis")
@@ -943,72 +1028,4 @@ elif page == "Greeks Analysis":
     except Exception as e:
         st.error(f"Error in Greeks Analysis calculation: {str(e)}")
         st.error("Please check your input parameters and try again.")
-                   
-        
-    
-
-           
-        
-elif page == "Implied Volatility":
-    st.header("Implied Volatility")
-    
-    symbol = st.text_input("Enter Stock Symbol (e.g., AAPL)", value="AAPL")
-    
-    if symbol:
-        try:
-            market_data = get_market_data(symbol)
-            
-            if market_data:
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Current Stock Price", f"${market_data['current_price']:.2f}")
-                with col2:
-                    st.metric("Risk-free Rate", f"{market_data['risk_free_rate']:.2%}")
-                
-                # Display options chain
-                expiry_date = st.selectbox("Select Maturity Date", market_data['options_dates'])
-                
-                if expiry_date:
-                    options_chain = get_options_chain(symbol, expiry_date)
-                    
-                    if options_chain is not None:
-                        # Calculate days until expiration
-                        expiry = datetime.strptime(expiry_date, '%Y-%m-%d')
-                        days_to_expiry = (expiry - datetime.now()).days
-                        
-                        # Create tabs for different views
-                        tab1, tab2, tab3,  = st.tabs([
-
-                            "Volatility Surface",
-                            "Volume Analysis",
-                            "Options Chain"
-                        ])
-                        
-                        
-                            
-                        with tab1:
-                            st.subheader("Implied Volatility Surface")
-                            with st.spinner("Calculating Implied Volatility Surface..."):
-                                iv_surface = plot_iv_surface(symbol)
-                                if iv_surface is not None:
-                                    st.plotly_chart(iv_surface, use_container_width=True)
-                                    
-                                    st.markdown("""
-                                    **Understanding the IV Surface:**
-                                    - **Time to Maturity**: Shows how IV varies across different expiration dates
-                                    - **Moneyness**: Strike price divided by current stock price (1.0 = at-the-money)
-                                    
-                                    """)
-                            
-                        with tab2:
-                            st.subheader("Volume Analysis")
-                            display_volume_analysis(options_chain)
-                        with tab3:
-                            st.subheader("Options Chain")
-                            display_options_chain(options_chain)   
-                     
-                            
-                                    
-        except Exception as e:
-            st.error(f"Error in Implied Volatility calculation: {str(e)}")
 
